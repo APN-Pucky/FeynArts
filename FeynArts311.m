@@ -1,8 +1,8 @@
 (*
 
-This is FeynArts, Version 3.10
-Copyright by Sepp Kueblbeck, Hagen Eck, and Thomas Hahn 1991-2019
-last modified 21 Jan 19 by Thomas Hahn
+This is FeynArts, Version 3.11
+Copyright by Sepp Kueblbeck, Hagen Eck, and Thomas Hahn 1991-2022
+last modified 25 Mar 22 by Thomas Hahn
 
 Release notes:
 
@@ -758,12 +758,12 @@ KI1::usage = KI2::usage = KI3::usage = KI4::usage = KI5::usage = KI6::usage =
 "KIi[n] is the ith kinematic index of the nth field in the kinematic
 vector."
 
-KIs = {KI1, KI2, KI3, KI4, KI5, KI6}
+KIs = {KI1, KI2, KI3, KI4, KI5, KI6, KI7, KI8, KI9, KI10, KI11, KI12}
 
 SI::usage = "SI[n] is the nth summation index in a component of the
 kinematic vector."
 
-SIs = {SI1_, SI2_, SI3_, SI4_, SI5_, SI6_}
+SIs = {SI1_, SI2_, SI3_, SI4_, SI5_, SI6_, SI7_, SI8_, SI9_, SI10_, SI11_, SI12_}
 
 CI::usage = "CI[n] is the classes index of the nth field in the
 kinematic vector."
@@ -791,15 +791,12 @@ Mix::usage =
 "Mix[g1, g2] is a generic mixing field with left partner g1 and
 right partner g2."
 
+SV = Mix[S, V]	(* for compatibility *)
+
 Rev::usage =
 "Rev[g1, g2] is a generic mixing field with left partner g2 and
 right partner g1, i.e. the reverse of Mix[g1, g2].  Rev is needed
 internally by FeynArts but should not appear in a model file."
-
-SV::usage =
-"SV is a scalar-vector mixing field."
-
-SV = Mix[S, V]	(* for compatibility *)
 
 $GenericMixing::usage =
 "$GenericMixing determines whether mixing of generic fields is
@@ -974,7 +971,8 @@ antiparticles) and must return True if the vertex violates the
 conservation of those quantum numbers."
 
 Compatibles::usage =
-"Compatibles[p] is a list of particles that are compatible with p."
+"Compatibles[g][p] is a list of particles that are compatible with p
+for insertion of generic field g."
 
 Index::usage =
 "Index is the head of an index name (i.e. Index[Generation])."
@@ -1107,12 +1105,22 @@ MomentumConservation::usage =
 whether momentum conservation at each vertex is enforced.  If set to
 False, every propagator will carry its own momentum."
 
+FermionSign::usage =
+"FermionSign is a function that aids tracing of signs added due to
+fermion configurations in CreateFeynAmp."
+
+FermionSign = Identity
+
 GraphInfoFunction::usage =
 "GraphInfoFunction is an option of CreateFeynAmp.  It specifies a
 function with which every diagram is multiplied.  The function receives
 two arguments, f[rul, top], where rul are the insertion rules and top
 the corresponding topology of the diagram.  This function can be used
 to add graph information to the amplitude."
+
+VertexMonitor::usage =
+"VertexMonitor[debuginfo] is a function invoked when looking up a vertex. 
+It is used for debugging FeynArts."
 
 VertexDebug::usage =
 "VertexDebug[debuginfo] is a function invoked whenever a vertex cannot
@@ -1144,9 +1152,9 @@ DiagramDelete::usage =
 or amplitude list expr.  n may be of the form 3, 42, 17...28 which
 selects diagrams 3, 42, and 17 through 28."
 
-Discard[args__] := (
+Discard := (
   Message[Discard::obsalt, Discard, DiagramDelete];
-  DiagramDelete[args] )
+  DiagramDelete )
 
 DiagramMap::usage =
 "DiagramMap[foo, diags] maps foo over all Feynman diagrams in diags."
@@ -1260,6 +1268,10 @@ d1, d2, ... that belong to a loop."
 
 GaugeXi::usage =
 "GaugeXi[s] is a gauge parameter with index s."
+
+GaugeVector::usage =
+"GaugeVector[V, p, (mu)] is a gauge vector for gauge boson V with
+momentum p and Lorentz Index mu, used e.g. in axial gauge."
 
 FourMomentum::usage =
 "FourMomentum[s, n] is the nth momentum of type s.  Allowed types are
@@ -1480,17 +1492,17 @@ P$NonCommuting = F | U
 
 P$ChainBuildOrder = {F, U}
 
-P$InsertionObjects = G[_][_][__][__] | _Mass | _GaugeXi |
-  VertexFunction[_][__]
+P$InsertionObjects = G[_][_][__][__] | _Mass |
+  _GaugeXi | _GaugeVector | VertexFunction[_][__]
 
 P$Options = (_Rule | _RuleDelayed)...
 
 
-$FeynArts = {3, 10}
+$FeynArts = {3, 11}
 
-$FeynArtsVersionNumber = 3.10
+$FeynArtsVersionNumber = 3.11
 
-$FeynArtsVersion = "FeynArts 3.10 (21 Jan 2019)"
+$FeynArtsVersion = "FeynArts 3.11 (25 Mar 2022)"
 
 $FeynArtsDir = DirectoryName[
   $InputFileName /. HoldPattern[$InputFileName] :>
