@@ -1,8 +1,8 @@
 (*
 
-This is FeynArts, Version 3.8
-Copyright by Sepp Kueblbeck, Hagen Eck, and Thomas Hahn 1991-2012
-last modified 9 Jul 13 by Thomas Hahn
+This is FeynArts, Version 3.9
+Copyright by Sepp Kueblbeck, Hagen Eck, and Thomas Hahn 1991-2015
+last modified 23 Sep 15 by Thomas Hahn
 
 Release notes:
 
@@ -43,12 +43,6 @@ Have fun!
 *)
 
 
-Print[""];
-Print["FeynArts 3.8"];
-Print["by Hagen Eck, Sepp Kueblbeck, and Thomas Hahn"];
-Print["last revised 9 Jul 13"]
-
-
 BeginPackage["FeynArts`"]
 
 (* definitions for Utilities.m *)
@@ -59,6 +53,10 @@ FAPrint::usage =
 ActualOptions::usage =
 "ActualOptions[sym, options] returns a list of options of sym with the
 valid options of sym replaced by their actual values."
+
+SelectOptions::usage =
+"SelectOptions[fun, options] selects from options those that belong to
+fun."
 
 ResolveLevel::usage =
 "ResolveLevel[lev] returns a full set of levels selected by lev.  For
@@ -117,8 +115,8 @@ ProcessName::usage =
 inserted topology or amplitude list amp which is unique to the model
 and particle selection."
 
-Pluralize::usage =
-"Pluralize is an internal function."
+NumberOf::usage =
+"NumberOf is an internal function."
 
 Statistics::usage =
 "Statistics is an internal function."
@@ -1207,6 +1205,11 @@ Incoming, Outgoing, External, and Internal."
 NonCommutative::usage =
 "NonCommutative is the head of noncommuting objects in a Feynman rule."
 
+LeviCivita::usage =
+"LeviCivita[mu, nu, ro, si] represents -I times the antisymmetric
+Levi-Civita tensor with Lorentz indices mu, nu, ro, si.  The sign
+convention is epsilon^{0123} = +1."
+
 MatrixTrace::usage =
 "MatrixTrace is the head of a trace of noncommuting objects (i.e. of
 symbols with head NonCommutative in the Feynman rules) in closed fermion
@@ -1343,7 +1346,9 @@ P$Generic::usage =
 "P$Generic is the pattern for generic fields."
 
 P$NonCommuting::usage =
-"P$NonCommuting is the pattern for the non-commuting generic fields."
+"P$NonCommuting is the pattern for the non-commuting generic fields.
+A list {patt1, patt2, ...} (e.g. {F, U}) means that chains are built
+first particles matching patt1, then for patt2, etc."
 
 P$InsertionObjects::usage =
 "P$InsertionObjects matches the objects in the generic amplitude that
@@ -1354,7 +1359,7 @@ P$Topology = Topology[__] | Topology[_][__]
 
 P$Generic = F | S | V | T | U | _Mix | _Rev
 
-P$NonCommuting = F | U
+P$NonCommuting = {F, U}
 
 P$InsertionObjects = G[_][_][__][__] | _Mass | _GaugeXi |
   VertexFunction[_][__]
@@ -1362,12 +1367,19 @@ P$InsertionObjects = G[_][_][__][__] | _Mass | _GaugeXi |
 P$Options = (_Rule | _RuleDelayed)...
 
 
-$FeynArts = 3.8
+$FeynArts = 3.9
 
-$FeynArtsDir = DirectoryName[ File /.
-  FileInformation[System`Private`FindFile[$Input]] ]
+$FeynArtsVersion = "FeynArts 3.9 (23 Sep 2015)"
+
+$FeynArtsDir = DirectoryName[
+  $InputFileName /. HoldPattern[$InputFileName] :>
+    (File /. FileInformation[System`Private`FindFile[$Input]]) ]
 
 $FeynArtsProgramDir = ToFileName[{$FeynArtsDir, "FeynArts"}]
+
+Print[""];
+Print[$FeynArtsVersion];
+Print["by Hagen Eck, Sepp Kueblbeck, and Thomas Hahn"];
 
 
 Get[ ToFileName[$FeynArtsDir, "Setup.m"] ]

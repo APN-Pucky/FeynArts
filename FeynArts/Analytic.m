@@ -2,14 +2,14 @@
 	Analytic.m
 		Translation of InsertFields output into
 		analytic expressions
-		last modified 19 Jul 13 th
+		last modified 4 Feb 16 th
 *)
 
 Begin["`Analytic`"]
 
 Options[ CreateFeynAmp ] = {
   AmplitudeLevel -> InsertionLevel,	(* i.e. taken from InsertFields *)
-  GaugeRules -> {_GaugeXi -> 1},
+  GaugeRules -> _GaugeXi -> 1,
   PreFactor -> -I (2 Pi)^(-4 LoopNumber),
   Truncated -> False,
   MomentumConservation -> True,
@@ -56,7 +56,8 @@ CreateFeynAmp[ TopologyList[tops__], opt___Rule ] :=
 
 CreateFeynAmp[ tops:TopologyList[info___][___], options___Rule ] :=
 Block[ {alevel, pref, next, gaugeru, truncru, momcons, graphinfo, toplist,
-amps, head, topnr = 1, opt = ActualOptions[CreateFeynAmp, options]},
+amps, head, topnr = 1, p$nc = Level[P$NonCommuting, {-1}, Alternatives],
+opt = ActualOptions[CreateFeynAmp, options]},
 
   If[ (alevel = ResolveLevel[AmplitudeLevel /. opt /. {info} /.
         Options[InsertFields]]) === $Failed,
@@ -82,7 +83,7 @@ amps, head, topnr = 1, opt = ActualOptions[CreateFeynAmp, options]},
 
   amps = CreateAmpTop/@ ( amps //.
     (_ -> Insertions[_][]) :> Seq[] /.
-    (Field[i_] -> fi:P$Generic) -> (Field[i] -> fi[Index[Generic, i]]) );
+    (Field[i_] -> fi:P$Generic) :> (Field[i] -> fi[Index[Generic, i]]) );
   FAPrint[1, "in total: ",
     Statistics[{Insertions[Generic]@@ amps}, alevel, " amplitude"]];
 
@@ -172,7 +173,7 @@ FourMomentum[ type_, n_Integer mom_ ] :=
 AppendMomentum[ Propagator[type_][from_, to_, fi_, mom_] ] :=
   Propagator[type][ from, to, fi,
     FourMomentum[type /. {Loop[_] -> ZZZ[1], Internal -> ZZZ[3]},
-      mom /. FourMomentum[_, t_] -> t] ]
+      mom /. FourMomentum[_, t_] :> t] ]
 
 AppendMomentum[ pr:Propagator[Outgoing][from_, __] ] :=
   Append[ pr,
@@ -234,7 +235,7 @@ Block[ {amp, gm, rawgm, orig, anti},
     orig[__] :> Seq[]
 ]
 
-FieldNumber[ fi_ ] := Sequence@@ Cases[fi, Field[n_] -> n, Infinity, 1] /;
+FieldNumber[ fi_ ] := Sequence@@ Cases[fi, Field[n_] :> n, Infinity, 1] /;
   !FreeQ[fi, orig]
 
 
@@ -329,20 +330,31 @@ Fixgmc[ r___, c:_[__, -_] ] := dot[r, c]
 	   e.g. when computing counter terms from the self energies *)
 Fixgmc[ c1:_[__, _?SelfConjugate], r___, c2:_[__, _?SelfConjugate] ] :=
   dot[c1, r, c2] /;
-  OrderedQ[{c2[[0, 1]][ c2[[2, 1]] ], c1[[0, 1]][ c1[[1, 1]] ]}]
+  OrderedQ[{c2[[0, 1]] @ c2[[2, 1]], c1[[0, 1]] @ c1[[1, 1]]}]
 
 Fixgmc[ c__ ] := Reverse[ ReverseProp/@ dot[c] ]
 
 
-MakeFermionChains[ top_ ] := top /; FreeQ[top, P$NonCommuting]
+Chkgmc[ c_ ] := Chkgmc[Level[c, {2}][[{1, -2}]], c]
+
+Chkgmc[ {v_, v_}, c_tr ] := c
+
+Chkgmc[ {Vertex[1][_], Vertex[1][_]}, c_dot ] := c
+
+Chkgmc[ _, c_ ] := List@@ c
+
+
+NCSelect[ top_, nc_ ] := (
+  ch = {ch, BuildChain@@ gmc/@ Select[top, !FreeQ[#[[3]], nc]&]};
+  Select[top, FreeQ[#[[3]], nc]&] )
+
+
+MakeFermionChains[ top_ ] := top /; FreeQ[top, p$nc]
 
 MakeFermionChains[ top_ ] :=
-Block[ {res, ext},
-  res = Append[
-    Select[top, FreeQ[#[[3]], P$NonCommuting]&],
-    BuildChain@@ gmc/@ Select[top, !FreeQ[#[[3]], P$NonCommuting]&] /.
-      gmc -> Fixgmc
-  ] /. BuildChain -> Sequence;
+Block[ {ch = {}, res, ext},
+  res = Fold[NCSelect, top, Flatten[{P$NonCommuting}]];
+  res = Flatten[{res, Cases[ch, gmc[c__] :> Chkgmc[Fixgmc[c]], Infinity]}];
 
 	(* Since fermion chains are always traversed opposite to the
 	   fermion flow, we need the sign of the permutation that gets
@@ -403,7 +415,7 @@ Block[ {v, perm},
   If[ perm === $Failed, Return[{}] ];
   v = v[[perm]];
   If[ cto < 0,
-    I PV[ If[FreeQ[v, P$NonCommuting], Identity, NonCommutative][
+    I PV[ If[FreeQ[v, p$nc], Identity, NonCommutative][
             VertexFunction[-cto]@@ v ] ],
   (* else *)
     AnalyticalCoupling[cto]@@ v ]
@@ -465,7 +477,7 @@ Block[ {res},
     AnalyticalPropagator[type][part],
     0 ];
   If[ Head[res] === PV,
-    res /. Mass[fi_] -> Mass[fi, ResolveType[type]],
+    res /. Mass[fi_] :> Mass[fi, ResolveType[type]],
   (* else *)
     Message[CreateFeynAmp::noprop, part]; Propagator[part] ]
 ]
@@ -508,6 +520,10 @@ SortPD[ p_ ] = p
 Attributes[ FeynAmpDenominator ] = {Orderless}
 
 FeynAmpDenominator[ ] = 1
+
+
+LeviCivita[ lor__ ] := Signature[{lor}] LeviCivita@@ Sort[{lor}] /;
+  !OrderedQ[{lor}]
 
 
 SumOver[ i_, {}, ext___ ] := SumOver[i, 0, ext]
@@ -565,6 +581,9 @@ Block[ {vert, perm, ferm, kin, cv, cvr},
     kin = kin /. M$FlippingRules ];
 
   cv = SignResolve[sym, cvr = TheC[kin]@@ vert];
+
+  VertexMonitor[{"vert" -> vert, "kin" -> kin, "cv" -> cv,
+    "fi" -> {fi}, "cto" -> cto}];
 
   If[ !FreeQ[cv, TheC],
     Message[CreateFeynAmp::nocoupl, vert, kin];
@@ -648,9 +667,9 @@ Block[ {Rule, levels, res},
 	(* Generic is always kept *)
   res = Switch[ {FreeQ[lev, Classes], FreeQ[lev, Particles]},
     {True, True},
-      tops /. (x_ -> Insertions[Classes | Particles][__]) -> x,
+      tops /. (x_ -> Insertions[Classes | Particles][__]) :> x,
     {False, True},
-      tops /. (x_ -> Insertions[Particles][__]) -> x,
+      tops /. (x_ -> Insertions[Particles][__]) :> x,
     {True, False},
       tops /. gr:Insertions[Classes][__] :>
         Insertions[Particles]@@ Join@@ TakeIns/@ gr,
@@ -753,11 +772,11 @@ DiagramDelete[ other_, n__ ] := Delete[other, ExpandRanges[n]]
 
 
 DiagramMap[ foo_, tops:(h_TopologyList)[__] ] :=
-Block[ {lev, Rule},
+Block[ {lev},
   lev = ResolveLevel[InsertionLevel /. List@@ h][[-1]];
-  Rule[_] := Sequence[];
   Apply[ #1 -> (#2 /. gr:FeynmanGraph[__, lev == _][__] :> foo[gr, #1, h])&,
       tops, 1 ] /.
+    (_[] -> Insertions[_][__]) :> Seq[] /.
     (FeynmanGraph[__][__] -> _[]) :> Seq[] /.
     (Topology[__][__] -> _[]) :> Seq[]
 ]
@@ -795,8 +814,7 @@ merge[ prop[i_, j_], prop[j_, k_] ] := prop[i, k]
 
 FermionRouting[ gr_:{}, top:P$Topology, ___ ] := Level[
   merge@@ Apply[ prop[ #1[[1]], #2[[1]] ]&,
-    Select[AddFieldNo[top] /. List@@ gr, !FreeQ[#, P$NonCommuting]&],
-    1 ],
+    Select[AddFieldNo[top] /. List@@ gr, !FreeQ[#, p$nc]&], 1 ],
   {-1} ]
 
 
@@ -814,7 +832,7 @@ FeynAmpCases[ patt_, lev_:Infinity ][ amp_ ] := Cases[amp, patt, lev]
 
 
 FeynAmpExpr[ gr:FeynmanGraph[__, lev_ == _][__], top:P$Topology, h_ ] :=
-Block[ {$Verbose = 0},
+Block[ {FAPrint},
   CreateFeynAmp[ h[top -> toins[lev, gr]],
     AmplitudeLevel -> {lev} ]
 ]

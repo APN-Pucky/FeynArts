@@ -1,7 +1,7 @@
 (*
 	Graphics.m
 		Graphics routines for FeynArts
-		last modified 2 Jun 12 th
+		last modified 4 Feb 16 th
 *)
 
 Begin["`Graphics`"]
@@ -74,7 +74,7 @@ Options[ Paint ] = {
   Numbering -> Full,
   FieldNumbers -> False,
   If[ $VersionNumber >= 6 && $Notebooks,
-    DisplayFunction :> (Print/@ Render[#] &),
+    DisplayFunction :> (Print/@ Render[##] &),
     DisplayFunction :> $DisplayFunction ]
 }
 
@@ -91,7 +91,7 @@ Paint[ top:(P$Topology -> _), opt:P$Options ] :=
   Paint[ TopologyList[][top], opt ]
 
 Paint[ tops_TopologyList, options:P$Options ] :=
-Block[ {fnum, ghead, opt = ActualOptions[Paint, options]},
+Block[ {fnum, ghead, opt = ActualOptions[Paint, Display, options]},
   fnum = FieldNumbers /. opt;
   ghead = Switch[ ghead = SheetHeader /. opt,
     None | False,
@@ -104,12 +104,12 @@ Block[ {fnum, ghead, opt = ActualOptions[Paint, options]},
       FeynArtsGraphics[ghead]
   ];
 
-  PaintSheet[tops]
+  PaintSheet[tops, options]
 ]
 
 Paint[ tops:TopologyList[info___][___], options:P$Options ] :=
 Block[ {plevel, ins, ghead,
-fnum = False, opt = ActualOptions[Paint, options]},
+fnum = False, opt = ActualOptions[Paint, Display, options]},
   If[ (plevel = ResolveLevel[PaintLevel /. opt /. {info} /.
         Options[InsertFields]]) === $Failed,
     Return[$Failed] ];
@@ -140,12 +140,13 @@ fnum = False, opt = ActualOptions[Paint, options]},
       FeynArtsGraphics[ghead]
   ];
 
-  PaintSheet[ ins //.
-    (x:FeynmanGraph[___][__] -> Insertions[_][gr___]) :> Seq[x, gr] ]
+  PaintSheet[
+    ins //. (x:FeynmanGraph[___][__] -> Insertions[_][gr___]) :> Seq[x, gr],
+    options ]
 ]
 
 
-PaintSheet[ tops_ ] :=
+PaintSheet[ tops_, options___ ] :=
 Block[ {auto, disp, cols, rows, dhead, g, topnr = 0, runnr = 0},
   auto = AutoEdit /. opt /. {False -> 2, _ -> 1};
   Switch[ cols = ColumnsXRows /. opt,
@@ -168,14 +169,15 @@ Block[ {auto, disp, cols, rows, dhead, g, topnr = 0, runnr = 0},
         DiagramGraphics["T" <> ToString[topnr] <> specs]
       ],
     Simple,
-      dhead[_] := DiagramGraphics[ ToString[++runnr] ],
+      _dhead := DiagramGraphics[ ToString[++runnr] ],
     _,
-      dhead[_] = DiagramGraphics[]
+      _dhead = DiagramGraphics[]
   ];
 
   g = Flatten[TopologyGraphics/@ List@@ tops] /. _Index -> Null;
   g = Flatten[{g, Table[Null, {Mod[rows cols - Length[g], rows cols]}]}];
-  g = ghead@@ Partition[Partition[g, cols], rows];
+  g = Level[{Partition[Partition[g, cols], rows],
+    {SelectOptions[Display, options]}}, {2}, ghead];
   (DisplayFunction /. opt)[g];
   g
 ]
@@ -183,14 +185,14 @@ Block[ {auto, disp, cols, rows, dhead, g, topnr = 0, runnr = 0},
 
 TopologyGraphics[ top_ -> gr_ ] :=
 Block[ {shapedata, gtop, vertexplot},
-  shapedata = Shape[gtop = top /. Vertex[e_, _] -> Vertex[e], auto];
+  shapedata = Shape[gtop = top /. Vertex[e_, _] :> Vertex[e], auto];
   gtop = Transpose[{
     List@@ gtop /. shapedata[[1]],
     shapedata[[2]],
     shapedata[[3]] }];
   vertexplot = VGraphics/@ Vertices[top] /. shapedata[[1]];
   ++topnr;
-  FAPrint[2, "> Top. ", topnr, ": ", Pluralize[{Length[gr]}, " diagram"]];
+  FAPrint[2, "> Top. ", topnr, ": ", NumberOf[{Length[gr]}, " diagram"]];
   dhead[#]@@ Flatten[{
     PGraphics@@@ (gtop /. List@@ # /. Field[_] -> 0),
     vertexplot }]&/@ List@@ gr
@@ -218,8 +220,7 @@ PGraphics[ _[type_][from_, to_, particle_, ___], height_, labelpos_ ] :=
 
 Format[ DiagramGraphics[h___][__] ] := SequenceForm["[", h, "]"]
 
-Format[ FeynArtsGraphics[h___][l__List] ] :=
-  FeynArtsGraphics[h]@@ MatrixForm/@ {l}
+Format[ (g_FeynArtsGraphics)[l__List, ___Rule] ] := MatrixForm/@ g[l]
 
 
 SetOptions[OpenWrite, CharacterEncoding -> {}]
@@ -231,9 +232,7 @@ Show[ g:FeynArtsGraphics[___][___] ] := Show/@ Render[g]
 Display[ chan_, g:FeynArtsGraphics[___][___], format___String,
   opt:P$Options ] :=
 Block[ {rg},
-  rg = Render[g, InferFormat[chan, format],
-    ImageSize -> (ImageSize /. {opt} /. Options[Display] /.
-                   ImageSize -> Automatic)];
+  rg = Render[g, InferFormat[chan, format], SelectOptions[Display, opt]];
   MapThread[Display[##, format, opt]&,
     {FilePerSheet[chan, Length[rg]], rg}]
 ]
@@ -244,9 +243,7 @@ Display[ chan_, s_String, ___ ] := (WriteString[#, s]; Close[#])& @
 Export[ chan_, g:FeynArtsGraphics[___][___], format___String,
   opt:P$Options ] :=
 Block[ {rg},
-  rg = Render[g, InferFormat[chan, format],
-    ImageSize -> (ImageSize /. {opt} /. Options[Export] /.
-                   ImageSize -> Automatic)];
+  rg = Render[g, InferFormat[chan, format], SelectOptions[Export, opt]];
   MapThread[Export[##, format, opt]&,
     {FilePerSheet[chan, Length[rg]], rg}]
 ]
@@ -285,14 +282,19 @@ prologue := prologue =
 
 epsf = ""
 
-Render[ g:FeynArtsGraphics[___][___], "EPS", opt___Rule ] :=
-Block[ {PaperSize = imgsize, epsf = " EPSF-3.0"},
-  Flatten[ Render[Head[g][#], "PS", opt]&/@ List@@ g ]
+Render[ (g_FeynArtsGraphics)[l__List, o___Rule],
+  format___String, opt___Rule ] :=
+Block[ {None = 0, Forward = 1, Backward = -1},
+  DoRender[format][o, opt][g/@ {l}]
 ]
 
-Render[ g:FeynArtsGraphics[___][___], "PS", opt___Rule ] :=
-Block[ {imgsize = getsize[opt, DefaultImageSize], bbox,
-None = 0, Forward = 1, Backward = -1},
+DoRender[ "EPS" ][ opt___ ][ g_ ] :=
+Block[ {PaperSize = imgsize, epsf = " EPSF-3.0"},
+  Flatten[ DoRender["PS"][opt]/@ g ]
+]
+
+DoRender[ "PS" ][ opt___ ][ g_ ] :=
+Block[ {imgsize = getsize[opt, DefaultImageSize], bbox},
   bbox = Round[.5 (PaperSize - imgsize)];
   bbox = {bbox, bbox + imgsize};
   { PSString[ "\
@@ -303,22 +305,22 @@ None = 0, Forward = 1, Backward = -1},
     MapIndexed[
       { "\n%%Page: ", #2, #2, "\ngsave\n",
         bbox, #1, "\ngrestore\nshowpage\n" }&,
-      PSRender[Head[g]/@ List@@ g] ], "\n\
+      PSRender[g] ], "\n\
 %%Trailer\n\
 end\n\
 %%EOF\n" ] }
 ]
 
-Render[ g:FeynArtsGraphics[___][___], "TeX", opt___Rule ] :=
-Block[ {imgsize = getsize[opt, DefaultImageSize],
-None = 0, Forward = 1, Backward = -1},
-  { "\\unitlength=1bp%\n\n" <> TeXRender[Head[g]/@ List@@ g] }
+DoRender[ "TeX" ][ opt___ ][ g_ ] :=
+Block[ {imgsize = getsize[opt, DefaultImageSize]},
+  { "\\unitlength=1bp%\n\n" <> TeXRender[g] }
 ]
 
-Render[ g:FeynArtsGraphics[___][___], ___String, opt___Rule ] :=
+DoRender[ ___ ][ opt___ ][ g_ ] :=
 Block[ {imgsize = getsize[opt, {288, 288}],
-None = 0, Forward = 1, Backward = -1},
-  MmaRender[Head[g]/@ List@@ g]
+(* magnify the labels a bit for screen viewing: *)
+LabelFontSize = 1.26 LabelFontSize},
+  MmaRender[g]
 ]
 
 
@@ -399,16 +401,15 @@ Block[ {rows, cols, g},
 ]
 
 MmaRender[ FeynArtsGraphics[h___][sheet_] ] :=
-Block[ {rows, cols, fsize, g, title,
-(* magnify the labels a bit for screen viewing: *)
-LabelFontSize = 1.26 LabelFontSize},
+Block[ {rows, cols, fsize, g, title},
   {rows, cols} = Dimensions[sheet];
   g = MapIndexed[DiagramBox, sheet, {2}];
   title = MmaRender[Title[h]];
   fsize = LabelFontSize Min[imgsize/{cols, rows}]/DiagramSize;
   Graphics[ Flatten[{g, title}],
     PlotRange -> {{0, cols}, {0, rows}} DiagramSize,
-    AspectRatio -> rows/cols]
+    AspectRatio -> rows/cols,
+    ImageSize -> imgsize]
 ]
 
 
@@ -514,7 +515,7 @@ Block[ {dir, ommc, cs, ctr, rad, mid, dphi, line, phi, damping, t, h, v},
   t = Flatten[{type}];
   h = Position[t, Straight | ScalarDash | GhostDash | Sine | Cycles, 1];
   dphi *= 2./Length[h];
-  line = scope[MapAt[HalfLine[#, phi += dphi, dphi]&, t, h]];
+  line = scope[MapAt[PropSegment[#, phi += dphi, dphi]&, t, h]];
 
   If[ arrow =!= 0,
     h = .5 arrow ArrowLength {Cos[dir], Sin[dir]};
@@ -569,7 +570,7 @@ Block[ {lab, h},
 ]
 
 
-HalfLine[ Sine, phi_, dphi_ ] :=
+PropSegment[ Sine, phi_, dphi_ ] :=
 Block[ {arc, w, n},
   arc = rad Abs[dphi];
   w = 2. NPi (.5 + Max[1, Round[NCrestsSine arc]]);
@@ -585,7 +586,7 @@ phadj = ArcCos[rshift/CyclesAmp]
 
 sphadj = Sin[phadj]
 
-HalfLine[ Cycles, phi_, dphi_ ] :=
+PropSegment[ Cycles, phi_, dphi_ ] :=
 Block[ {arc, w, n, phamp},
   arc = rad Abs[dphi];
   w = 2. (phadj + NPi Max[1, Round[NCrestsCycles arc]]);
@@ -598,17 +599,17 @@ Block[ {arc, w, n, phamp},
       {n, 0, 1, 1./Floor[2 NPoints arc]} ] ]
 ]
 
-HalfLine[ Straight, phi_, dphi_ ] :=
+PropSegment[ Straight, phi_, dphi_ ] :=
   If[ rad < 20000,
     Circle[ctr, rad, Sort[{phi - dphi, phi}]],
     Line[{ ctr + rad {Cos[phi - dphi], Sin[phi - dphi]},
            ctr + rad {Cos[phi], Sin[phi]} }] ]
 
-HalfLine[ ScalarDash, phi_, dphi_ ] :=
-  scope[ ScalarDashing, HalfLine[Straight, phi, dphi] ]
+PropSegment[ ScalarDash, phi_, dphi_ ] :=
+  scope[ ScalarDashing, PropSegment[Straight, phi, dphi] ]
 
-HalfLine[ GhostDash, phi_, dphi_ ] :=
-  scope[ GhostDashing, HalfLine[Straight, phi, dphi] ]
+PropSegment[ GhostDash, phi_, dphi_ ] :=
+  scope[ GhostDashing, PropSegment[Straight, phi, dphi] ]
 
 
 PropLabel[ label_, labelpos_, arrow_, type_ ] :=
@@ -675,28 +676,26 @@ Block[ {tex = t},
   tex
 ]
 
-If[ $Notebooks,
+If[ $VersionNumber >= 6 || $Notebooks,
 
-MmaRender[ LabelText[t_, r__] ] :=
-  NotebookChar[Flatten[{ToUnicode[t]}], r];
+MmaRender[ LabelText[t_, pos_, align_, size_, ___] ] := Text[
+  StyleForm[DisplayForm[MmaChar@@ Flatten[{ToUnicode[t]}]],
+    FontFamily -> LabelFont,
+    FontSize -> size fsize],
+  pos, align ];
 
-NotebookChar[ {t_, sub_:" ", super_:" ", over_:" "},
-  pos_, align_, size_, ___ ] :=
-Block[ {label = t},
-  If[ over =!= " ", label = OverscriptBox[label, over] ];
-  Which[
-    sub =!= " " && super =!= " ",
-      label = SubsuperscriptBox[label, sub, super],
-    sub =!= " ",
-      label = SubscriptBox[label, sub],
-    super =!= " ",
-      label = SuperscriptBox[label, super]
-  ];
-  Text[
-    StyleForm[DisplayForm[label], FontFamily -> LabelFont,
-      FontSize -> size fsize],
-    pos, align ]
-],
+MmaChar[t__, Null] := MmaChar[t];
+
+MmaChar[t_, sub_, super_, over_] :=
+  MmaChar[OverscriptBox[t, over], sub, super];
+
+MmaChar[t_, Null, super_] := SuperscriptBox[t, super];
+
+MmaChar[t_, sub_, super_] := SubsuperscriptBox[t, sub, super];
+
+MmaChar[t_, sub_] := SubscriptBox[t, sub];
+
+MmaChar[t_] := RowBox[{t}],
 
 (* else $Notebooks *)
 
@@ -832,7 +831,7 @@ vars, tadbr, tad, min, ok, c, ct, pt, shrink = {}, rev = {}, loops = {}},
   Cases[mesh2, branch[ctr:center[_][_], v_, ___] :>
     (tadbr[ctr] = Flatten[{tadbr[ctr], v /. rev}]), Infinity];
   mesh = mesh2 /. branch[__] :> Seq[];
-  vert = Cases[mesh, leaf[a_] -> a];
+  vert = Cases[mesh, leaf[a_] :> a];
   mesh = mesh /. _leaf :> Seq[];
   mesh = List@@ Fold[
     Replace[#1, x:{__, #2} :> Reverse[x], {1}] /.
@@ -1027,7 +1026,7 @@ Block[ {adj, max, new, a1, a2},
   If[ Length[adj] === 1,
     new = 2.6 xy - .8 Plus@@ adj[[1]],
   (* else *)
-    adj = Orientation@@@ (adj /. {a_, xy} -> {xy, a});
+    adj = Orientation@@@ (adj /. {a_, xy} :> {xy, a});
     max = -1;
     Outer[
       If[ (new = Abs[#2 - #1]) > max, max = new; a1 = #1; a2 = #2 ]&,
@@ -1116,7 +1115,7 @@ Shape[ top:P$Topology -> _ ] := Shape[top]
 Shape[ top:P$Topology, auto_:0 ] :=
 Block[ {edittop, topcode, shapedata, arg1, arg2, exitcode},
   edittop = Take[#, 2]&/@ Topology@@ top /.
-    External -> Incoming /. Vertex[e_, _] -> Vertex[e];
+    External -> Incoming /. Vertex[e_, _] :> Vertex[e];
   topcode = TopologyCode[edittop];
   res = auto;
   shapedata = GetShape[topcode, --res; Catch[AutoShape[edittop]]];
@@ -1338,9 +1337,9 @@ ToUnicode[ "\\Leftarrow" ] = "\[DoubleLeftArrow]";
 ToUnicode[ "\\Rightarrow" ] = "\[DoubleRightArrow]";
 ToUnicode[ "\\Uparrow" ] = "\[DoubleUpArrow]";
 ToUnicode[ "\\Downarrow" ] = "\[DoubleDownArrow]";
-ToUnicode[ "\\bar" ] = "-";
+ToUnicode[ "\\bar" ] = "_";
 ToUnicode[ "\\hat" ] = "^";
-ToUnicode[ "\\tilde" ] = "\[Tilde]";
+ToUnicode[ "\\tilde" ] = "~";
 ToUnicode[ "\\dot" ] = "\[CenterDot]";
 ToUnicode[ "\\ddot" ] = "\[CenterDot]\[CenterDot]";
 ToUnicode[ "\\vec" ] = "\[RightVector]";
@@ -1350,7 +1349,7 @@ ToUnicode[ "\\&" ] = "&";
 ToUnicode[ "\\$" ] = "$";
 ToUnicode[ "\\%" ] = "%";
 ToUnicode[ "\\_" ] = "_";
-ToUnicode[ Null ] = " ";
+ToUnicode[ Null ] = Null;
 ToUnicode[ ComposedChar[t__] ] := ToUnicode/@ {t};
 ToUnicode[ c_ ] := ToString[c]
 

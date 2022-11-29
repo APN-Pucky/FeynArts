@@ -2,7 +2,7 @@
 	Insert.m
 		Insertion of fields into topologies created by 
 		CreateTopologies.
-		last modified 5 Jul 13 th
+		last modified 4 Feb 16 th
 
 The insertion is done in 3 levels: insertion of generic fields (Generic),
 of classes of a certain model (Classes) or of the members of the classes
@@ -10,8 +10,8 @@ of classes of a certain model (Classes) or of the members of the classes
 
 Models are described in model files which are supposed to exist somewhere
 on the $ModelPath.  At the beginning of an insertion InsertFields calls
-Initialize`InitializeModel that checks whether the model is initialized or
-not and performs the initialization if needed.
+InitializeModel that checks whether the model is initialized or not and
+performs the initialization if needed.
 
 *)
 
@@ -46,7 +46,7 @@ InsertFields[ top:P$Topology, args__ ] :=
 
 InsertFields[ tops:(TopologyList | _TopologyList)[___],
   initial_ -> final_, options___Rule ] :=
-Block[ {proc, ilevel, level, excl, last, omit, need, 
+Block[ {proc, ilevel, excl, last, omit, need, 
 res, ninc, nout, pinc, pout, fields, topnr = 0, fieldnr = 0,
 opt = ActualOptions[InsertFields, options]},
 
@@ -96,8 +96,7 @@ opt = ActualOptions[InsertFields, options]},
     fields = MapIndexed[ Field@@ #2 -> #1 &,
       Join[ proc[[1]], AntiParticle/@ proc[[2]] ] ];
     ninc = Length[fields];
-    level = Last[ilevel];
-    res = TopologyInsert/@ res
+    res = TopologyInsert[Last[ilevel]]/@ res
   ];
 
   RestrictCurrentModel[];
@@ -161,33 +160,33 @@ NumberInsertions[ lev_ ][ gr___ ] :=
 
 (* TopologyInsert: insert fields into one topology *)
 
-TopologyInsert[ Topology[pr__] -> ins_ ] :=
-  TopologyInsert[Topology[1][pr] -> ins]
+TopologyInsert[ level_ ][ Topology[pr__] -> ins_ ] :=
+  TopologyInsert[level][Topology[1][pr] -> ins]
 
-TopologyInsert[ Topology[pr__] ] :=
-  TopologyInsert[Topology[1][pr]]
+TopologyInsert[ level_ ][ Topology[pr__] ] :=
+  TopologyInsert[level][Topology[1][pr]]
 
 (* start from scratch if someone wants to re-insert Generic level *)
 
-TopologyInsert[ top_ -> Insertions[_][__] ] :=
-  TopologyInsert[top] /; level === Generic
+TopologyInsert[ Generic ][ top_ -> Insertions[_][__] ] :=
+  TopologyInsert[Generic][top]
 
 (* allow insertion on top of old insertions only if external particles
    are the same: *)
 
-TopologyInsert[ top_ -> Insertions[_][ins_, ___] ] :=
-  TopologyInsert[top] /; fields =!= List@@ Take[ins, ninc]
+TopologyInsert[ level_ ][ top_ -> Insertions[_][ins_, ___] ] :=
+  TopologyInsert[level][top] /; fields =!= List@@ Take[ins, ninc]
 
 (* append Insertions template: *)
 
 ReplaceFieldNo[ p_[from_, to_, ___], {n_} ] := p[from, to, Field[n]]
 
-TopologyInsert[ top:Topology[_][__] ] :=
-  TopologyInsert[ MapIndexed[ReplaceFieldNo, top] ->
+TopologyInsert[ level_ ][ top:Topology[_][__] ] :=
+  TopologyInsert[level][ MapIndexed[ReplaceFieldNo, top] ->
     { FeynmanGraph@@ Join[fields,
       Array[Field[#] -> 0 &, Length[top] - ninc, ninc + 1]] } ]
 
-TopologyInsert[ top:Topology[_][__] -> ins_ ] :=
+TopologyInsert[ level_ ][ top:Topology[_][__] -> ins_ ] :=
 Block[ {vertli, fpoints, res, topol = top},
   fpoints = Map[ VertexFields[top],
     DeleteCases[Take[#, 2], Vertex[1][_]]&/@ top, {2} ];
@@ -204,7 +203,7 @@ Block[ {vertli, fpoints, res, topol = top},
   top -> res
 ]
 
-TopologyInsert[ other_ ] = other
+TopologyInsert[ _ ][ other_ ] = other
 
 
 (* extract field points *)
@@ -245,21 +244,28 @@ LeftPartner[ fi_ ] := MixingPartners[fi][[1]] /; FreeQ[fi, Field]
 RightPartner[ fi_ ] := MixingPartners[fi][[-1]] /; FreeQ[fi, Field]
 
 
-ParticleLookup[ fp_, Mix[l_, r_] ] := ParticleLookup[fp, Mix[l, r], r]
+ParticleLookup[ fp_, Mix[l_, r_] ] := PLookup[fp, Mix[l, r], l, r]
 
-ParticleLookup[ fp_, Rev[l_, r_] ] := ParticleLookup[fp, Mix[l, r], l]
+ParticleLookup[ fp_, Rev[l_, r_] ] := PLookup[fp, Mix[l, r], r, l]
 
-ParticleLookup[ fp_, p_ ] := ParticleLookup[fp, p, p]
+ParticleLookup[ {fp_, r___}, p_ ] := (lallowed = PLookup[fp, p, p]) /;
+  fp === r
 
-ParticleLookup[ fp_, mp_, p_ ] := Flatten[ Compatibles[mp, #]&/@
-  Lookup[ fp[[0, 1]] ][p, FieldPoint@@ (fp /. _Field -> p)] ]
+ParticleLookup[ fp_, p_ ] := PLookup[fp, p, AntiParticle[p], p]
+
+PLookup[ {fpl_, fpr_}, mp_, ap_, p_ ] := Intersection[
+  lallowed = AntiParticle/@ PLookup[fpl, mp, ap],
+  rallowed = PLookup[fpr, mp, p] ]
+
+PLookup[ fp_, mp_, p_ ] := Flatten[ Compatibles[mp, #]&/@
+  FieldLookup[ fp[[0, 1]] ][p, FieldPoint@@ (fp /. _Field -> p)] ]
 
 
-Lookup[ cto_?NonNegative ] = PossibleFields[cto]
+FieldLookup[ cto_?NonNegative ] = PossibleFields[cto]
 
-Lookup[ cto_ ][ 0, fp_ ] := PossibleFields[-cto][0, fp]
+FieldLookup[ cto_ ][ 0, fp_ ] := PossibleFields[-cto][0, fp]
 
-Lookup[ _ ][ p_, fp_ ] :=
+FieldLookup[ _ ][ p_, fp_ ] :=
 Block[ {n = Position[fp, p, {1}, 1]},
   Select[
     Select[F$Classes, !FreeQ[#, p]&],
@@ -285,42 +291,27 @@ VFAllowed[ fp_ ] :=
 (* Insert compatible particles in 1 propagator for 1 set of rules: *)
 
 Ins11[ vert12_, ru_, i_ ] := 
-Block[ {vx, p = ru[[i, 2]], leftallowed, rightallowed, allowed, ckfp, prop},
-
-  vx = Map[ RightPartner,
-    If[ SameQ@@ vert12,		(* tadpole *)
-      Take[vert12, 1],
-      vert12 ] /. Delete[List@@ ru, i],
-    {2} ];
-
-  leftallowed = ParticleLookup[vx[[1]], AntiParticle[p]];
-
-  ckfp[ n_, fi_ ] := CheckFP[ vx[[n]] /. Field[i] -> fi ];
-
-  allowed = If[ Length[vx] === 1,	(* tadpole *)
-    Select[ Intersection[leftallowed, F$AllowedFields], ckfp[1, #]& ],
-  (* else *)
-    leftallowed = AntiParticle/@ leftallowed;
-    rightallowed = ParticleLookup[vx[[2]], p];
-    Select[
-      Intersection[leftallowed, rightallowed, F$AllowedFields],
-      ckfp[1, #] && ckfp[2, #] & ]
-  ];
+Block[ {vx, p = ru[[i, 2]], lallowed, rallowed, allowed, prop},
+  vx = Map[RightPartner, List@@ vert12 /. Delete[List@@ ru, i], {2}];
+  allowed = Select[
+    Intersection[ParticleLookup[vx, p], F$AllowedFields],
+    VectorQ[vx /. Field[i] -> #, CheckFP]& ];
 
   prop = ResolveType[ vert12[[0, 1]] ];
 
   If[ TrueQ[$FADebug],
+    vx = vert12 /. List@@ ru;
     Print["Ins11: inserting field #", i, " (", p, ") on ", prop];
     Print["Ins11: fields     = ", List@@ ru];
-    Print["Ins11: L-vertex   = ", LeftPartner/@ (vert12[[1]] /. List@@ ru)];
-    Print["Ins11: R-vertex   = ", RightPartner/@ (vert12[[2]] /. List@@ ru)];
-    Print["Ins11: L-allowed  = ", leftallowed];
-    Print["Ins11: R-allowed  = ", rightallowed];
+    Print["Ins11: L-vertex   = ", LeftPartner/@ vx[[1]] ];
+    Print["Ins11: R-vertex   = ", RightPartner/@ vx[[-1]] ];
+    Print["Ins11: L-allowed  = ", lallowed];
+    Print["Ins11: R-allowed  = ", rallowed];
     Print["Ins11: allowed    = ", allowed];
     Print[""];
   ];
 
-  (ru /. (Field[i] -> _) -> (Field[i] -> #))&/@
+  ReplacePart[ru, #, {i, 2}]&/@
     Select[allowed, !FreeQ[InsertOnly[#], prop]&]
 ]
 
@@ -512,18 +503,18 @@ Block[ {ins, li, NoUnfold},
 InsertionsCompare[ _, {} ] = {}
 
 InsertionsCompare[ top_, ins_ ] :=
-Block[ {intp, loo, all, disj, fno},
+Block[ {f, cmp, fno},
 	(* only attempt to compare disjoint insertions *)
-  intp = Cases[top, Propagator[Internal][_, _, fi_] -> fi];
-  loo[ _ ] = 0;
-  Cases[top, Propagator[Loop[n_]][_, _, fi_] :> (loo[n] += fi)];
-  all = {intp, Times@@ Cases[DownValues[loo], (_ :> p_Plus) -> p]} /.
-    (List@@@ ins /. s_?Negative -> -s);
-  disj = Apply[List, ins[[ Flatten[Position[all, #, 1]] ]], {0, 1}]&/@ 
-    Union[all];
-  all = TopologyList@@ (Compare[TopologyList@@ (top /. #)]&)/@ disj;
+  _f = 4711;
+  Cases[top, Propagator[t_][_, _, fi_] :> (f[t] *= fi)];
+  _f = {};
+  cmp = {{f[Internal]}, Cases[DownValues[f], _[_[_[_Loop]], fi_] :> fi]};
+  cmp = Apply[Plus, DeleteCases[cmp /. List@@@ ins, _Integer, {4}], {2}];
+  cmp = Apply[List, ins[[ Flatten[Position[cmp, #, 1]] ]], {0, 1}]&/@ 
+    Union[cmp];
+  cmp = TopologyList@@ (Compare[TopologyList@@ (top /. #)]&)/@ cmp;
   fno = List@@ Last/@ top;
-  (FeynmanGraph[ #[[0, 1]] ]@@ Thread[fno -> Last/@ List@@ #]&)/@ all
+  (FeynmanGraph[ #[[0, 1]] ]@@ Thread[fno -> Last/@ List@@ #]&)/@ cmp
 ]
 
 End[]
